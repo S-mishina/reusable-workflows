@@ -1,0 +1,61 @@
+name: Python Lint
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: "Python version"
+        required: false
+        type: string
+        default: "3.10"
+      run-ruff:
+        description: "Run ruff linter"
+        required: false
+        type: boolean
+        default: true
+      run-black:
+        description: "Run black formatter check"
+        required: false
+        type: boolean
+        default: true
+      run-isort:
+        description: "Run isort import check"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install linters
+        run: |
+          pip install --upgrade pip
+          PACKAGES=""
+          if [[ "${{ inputs.run-ruff }}" == "true" ]]; then PACKAGES="${PACKAGES} ruff"; fi
+          if [[ "${{ inputs.run-black }}" == "true" ]]; then PACKAGES="${PACKAGES} black"; fi
+          if [[ "${{ inputs.run-isort }}" == "true" ]]; then PACKAGES="${PACKAGES} isort"; fi
+          if [[ -n "${PACKAGES}" ]]; then pip install ${PACKAGES}; fi
+
+      - name: Run ruff
+        if: inputs.run-ruff
+        run: ruff check .
+
+      - name: Run black
+        if: inputs.run-black
+        run: black --check .
+
+      - name: Run isort
+        if: inputs.run-isort
+        run: isort --check-only .

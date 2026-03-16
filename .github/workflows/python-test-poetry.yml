@@ -1,0 +1,54 @@
+name: Python Test (Poetry)
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: "Python version"
+        required: false
+        type: string
+        default: "3.10"
+      test-command:
+        description: "Test command"
+        required: false
+        type: string
+        default: "poetry run pytest tests/"
+      pythonpath:
+        description: "Additional PYTHONPATH"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry
+          key: poetry-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-${{ inputs.python-version }}-
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Run tests
+        env:
+          PYTHONPATH: ${{ inputs.pythonpath }}
+        run: ${{ inputs.test-command }}

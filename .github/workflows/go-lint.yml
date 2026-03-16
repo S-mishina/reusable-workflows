@@ -1,0 +1,41 @@
+name: Go Lint
+
+on:
+  workflow_call:
+    inputs:
+      golangci-lint-version:
+        description: "golangci-lint version"
+        required: false
+        type: string
+        default: "v2.5.0"
+      golangci-lint-action-version:
+        description: "golangci-lint-action tag"
+        required: false
+        type: string
+        default: "v8"
+      args:
+        description: "Additional arguments (e.g. --timeout=5m)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@${{ inputs.golangci-lint-action-version }}
+        with:
+          version: ${{ inputs.golangci-lint-version }}
+          args: ${{ inputs.args }}

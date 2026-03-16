@@ -1,0 +1,45 @@
+name: Python Test (pip)
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: "Python version"
+        required: false
+        type: string
+        default: "3.10"
+      requirements-file:
+        description: "Requirements file path"
+        required: false
+        type: string
+        default: "requirements.txt"
+      test-command:
+        description: "Test command"
+        required: false
+        type: string
+        default: "python -m unittest discover"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          if [[ -f "${{ inputs.requirements-file }}" ]]; then
+            pip install -r "${{ inputs.requirements-file }}"
+          fi
+
+      - name: Run tests
+        run: ${{ inputs.test-command }}

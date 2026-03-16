@@ -1,0 +1,131 @@
+name: Docker Build & Push to GHCR
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        description: "Image name (e.g. s-mishina/my-app)"
+        required: true
+        type: string
+      platforms:
+        description: "Target platforms"
+        required: false
+        type: string
+        default: "linux/amd64"
+      context:
+        description: "Build context path"
+        required: false
+        type: string
+        default: "."
+      dockerfile:
+        description: "Dockerfile path"
+        required: false
+        type: string
+        default: "Dockerfile"
+      tags:
+        description: "Direct tag specification (overrides default sha+latest)"
+        required: false
+        type: string
+        default: ""
+      use-metadata-action:
+        description: "Use docker/metadata-action for tag generation"
+        required: false
+        type: boolean
+        default: false
+      metadata-tags:
+        description: "Tag rules for docker/metadata-action"
+        required: false
+        type: string
+        default: ""
+      build-args:
+        description: "Build arguments"
+        required: false
+        type: string
+        default: ""
+      cache-from:
+        description: "Cache source (e.g. type=gha)"
+        required: false
+        type: string
+        default: ""
+      cache-to:
+        description: "Cache destination (e.g. type=gha,mode=max)"
+        required: false
+        type: string
+        default: ""
+      environment:
+        description: "GitHub Environment name for approval flow / secret scoping"
+        required: false
+        type: string
+        default: ""
+      runner:
+        description: "Runner label"
+        required: false
+        type: string
+        default: "ubuntu-24.04"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ${{ inputs.runner }}
+    environment: ${{ inputs.environment || null }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        if: contains(inputs.platforms, ',')
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        if: inputs.use-metadata-action
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ inputs.image-name }}
+          tags: ${{ inputs.metadata-tags }}
+
+      - name: Determine tags
+        id: tags
+        run: |
+          if [[ "${{ inputs.use-metadata-action }}" == "true" ]]; then
+            echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+            echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${{ inputs.tags }}" ]]; then
+            echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+            echo "${{ inputs.tags }}" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          else
+            SHA="${{ github.sha }}"
+            SHORT_SHA="${SHA:0:7}"
+            echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+            echo "ghcr.io/${{ inputs.image-name }}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+            echo "ghcr.io/${{ inputs.image-name }}:latest" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.context }}/${{ inputs.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: ${{ inputs.use-metadata-action && steps.meta.outputs.labels || '' }}
+          build-args: ${{ inputs.build-args }}
+          cache-from: ${{ inputs.cache-from }}
+          cache-to: ${{ inputs.cache-to }}

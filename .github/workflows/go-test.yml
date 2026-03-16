@@ -1,0 +1,108 @@
+name: Go Test
+
+on:
+  workflow_call:
+    inputs:
+      test-command:
+        description: "Custom test command (e.g. make test). Overrides race/coverage flags."
+        required: false
+        type: string
+        default: ""
+      race:
+        description: "Enable race detector (ignored if test-command is set)"
+        required: false
+        type: boolean
+        default: true
+      coverage:
+        description: "Generate coverage report (ignored if test-command is set)"
+        required: false
+        type: boolean
+        default: true
+      pr-comment:
+        description: "Post coverage comment on PR"
+        required: false
+        type: boolean
+        default: false
+      upload-coverage:
+        description: "Upload coverage as artifact"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run tests (custom command)
+        if: inputs.test-command != ''
+        run: ${{ inputs.test-command }}
+
+      - name: Run tests (default)
+        if: inputs.test-command == ''
+        run: |
+          FLAGS="-v"
+          if [[ "${{ inputs.race }}" == "true" ]]; then
+            FLAGS="${FLAGS} -race"
+          fi
+          if [[ "${{ inputs.coverage }}" == "true" ]]; then
+            FLAGS="${FLAGS} -coverprofile=coverage.out -covermode=atomic"
+          fi
+          go test ${FLAGS} ./...
+
+      - name: Display coverage
+        if: inputs.test-command == '' && inputs.coverage
+        run: go tool cover -func=coverage.out
+
+      - name: Upload coverage artifact
+        if: inputs.test-command == '' && inputs.coverage && inputs.upload-coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+      - name: Post coverage comment on PR
+        if: inputs.test-command == '' && inputs.coverage && inputs.pr-comment && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = require('child_process').execSync('go tool cover -func=coverage.out').toString();
+            const totalLine = output.split('\n').find(l => l.includes('total:'));
+            const total = totalLine ? totalLine.match(/(\d+\.\d+%)/)?.[1] : 'N/A';
+
+            const body = `## Go Test Coverage\n\n**Total: ${total}**\n\n<details><summary>Details</summary>\n\n\`\`\`\n${output}\n\`\`\`\n</details>`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c => c.body.includes('## Go Test Coverage'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

@@ -1,0 +1,204 @@
+name: Release
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Release version (e.g. v1.0.0)"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark as prerelease"
+        required: false
+        type: boolean
+        default: false
+      draft:
+        description: "Create as draft"
+        required: false
+        type: boolean
+        default: true
+      environment:
+        description: "GitHub Environment name for approval flow / secret scoping"
+        required: false
+        type: string
+        default: ""
+      install-instructions:
+        description: "Install instructions for release notes (use ${VERSION} placeholder)"
+        required: false
+        type: string
+        default: ""
+      pre-release-steps:
+        description: "Additional shell commands to run before release"
+        required: false
+        type: string
+        default: ""
+      release-assets:
+        description: "Files to attach to the release (newline-separated)"
+        required: false
+        type: string
+        default: ""
+      docker-build:
+        description: "Also build and push Docker image"
+        required: false
+        type: boolean
+        default: false
+      docker-image-name:
+        description: "Docker image name (required if docker-build is true)"
+        required: false
+        type: string
+        default: ""
+      docker-platforms:
+        description: "Docker target platforms"
+        required: false
+        type: string
+        default: "linux/amd64,linux/arm64"
+      docker-metadata-tags:
+        description: "Docker metadata-action tag rules"
+        required: false
+        type: string
+        default: ""
+      pypi-publish:
+        description: "Publish to PyPI via Poetry"
+        required: false
+        type: boolean
+        default: false
+      pypi-python-version:
+        description: "Python version for PyPI publish"
+        required: false
+        type: string
+        default: "3.14"
+      pypi-repository-name:
+        description: "PyPI repository name"
+        required: false
+        type: string
+        default: ""
+      pypi-repository-url:
+        description: "PyPI repository URL"
+        required: false
+        type: string
+        default: "https://upload.pypi.org/legacy/"
+    secrets:
+      pypi-token:
+        description: "PyPI API token (required if pypi-publish is true)"
+        required: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment || null }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run pre-release steps
+        if: inputs.pre-release-steps != ''
+        run: ${{ inputs.pre-release-steps }}
+
+      - name: Create tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ inputs.version }}" -m "Release ${{ inputs.version }}"
+          git push origin "${{ inputs.version }}"
+
+      - name: Build release body
+        id: notes
+        run: |
+          BODY=""
+          if [[ -n "${{ inputs.install-instructions }}" ]]; then
+            INSTALL=$(echo "${{ inputs.install-instructions }}" | sed "s/\${VERSION}/${{ inputs.version }}/g")
+            BODY="${BODY}## Installation\n\n${INSTALL}\n\n"
+          fi
+          echo "body<<EOF" >> "$GITHUB_OUTPUT"
+          echo -e "${BODY}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: ${{ inputs.version }}
+          body: ${{ steps.notes.outputs.body }}
+          generate_release_notes: true
+          draft: ${{ inputs.draft }}
+          prerelease: ${{ inputs.prerelease }}
+          files: ${{ inputs.release-assets }}
+
+  pypi:
+    if: inputs.pypi-publish
+    needs: release
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment || null }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.pypi-python-version }}
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Configure PyPI repository
+        run: |
+          poetry config repositories.${{ inputs.pypi-repository-name }} "${{ inputs.pypi-repository-url }}"
+          poetry config pypi-token.${{ inputs.pypi-repository-name }} "${{ secrets.pypi-token || secrets.PYPI_TOKEN }}"
+
+      - name: Build package
+        run: poetry build
+
+      - name: Publish package
+        run: poetry publish --repository ${{ inputs.pypi-repository-name }}
+
+  docker:
+    if: inputs.docker-build
+    needs: release
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment || null }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ inputs.docker-image-name }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ inputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version }}
+            ${{ inputs.docker-metadata-tags }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ inputs.docker-platforms }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
