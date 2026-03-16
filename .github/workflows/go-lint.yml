@@ -8,11 +8,6 @@ on:
         required: false
         type: string
         default: "v2.5.0"
-      golangci-lint-action-version:
-        description: "golangci-lint-action tag"
-        required: false
-        type: string
-        default: "v8"
       args:
         description: "Additional arguments (e.g. --timeout=5m)"
         required: false
@@ -35,7 +30,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@${{ inputs.golangci-lint-action-version }}
+        uses: golangci/golangci-lint-action@v8
         with:
           version: ${{ inputs.golangci-lint-version }}
           args: ${{ inputs.args }}
