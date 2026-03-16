@@ -62,6 +62,21 @@ on:
         required: false
         type: string
         default: "ubuntu-24.04"
+      download-artifact:
+        description: "Download artifact before build"
+        required: false
+        type: boolean
+        default: false
+      artifact-name:
+        description: "Artifact name to download"
+        required: false
+        type: string
+        default: ""
+      artifact-path:
+        description: "Path to download artifact to"
+        required: false
+        type: string
+        default: "."
 
 permissions:
   contents: read
@@ -74,6 +89,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download artifact
+        if: inputs.download-artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.artifact-path }}
 
       - name: Set up QEMU
         if: contains(inputs.platforms, ',')
