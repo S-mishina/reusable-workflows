@@ -58,4 +58,4 @@ jobs:
 
       - name: Run isort
         if: inputs.run-isort
-        run: isort --check-only .
+        run: isort --profile black --check-only .
