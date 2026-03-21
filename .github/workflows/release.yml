@@ -43,7 +43,12 @@ on:
         type: boolean
         default: false
       docker-image-name:
-        description: "Docker image name (required if docker-build is true)"
+        description: "Docker image name for single image build (required if docker-build is true and docker-images is empty)"
+        required: false
+        type: string
+        default: ""
+      docker-images:
+        description: 'JSON array of images to build (e.g. [{"name":"org/app","dockerfile":"Dockerfile"}]). Overrides docker-image-name.'
         required: false
         type: string
         default: ""
@@ -176,7 +181,7 @@ jobs:
         run: poetry publish --repository ${{ inputs.pypi-repository-name }}
 
   docker:
-    if: inputs.docker-build
+    if: inputs.docker-build && inputs.docker-images == ''
     needs: release
     runs-on: ubuntu-24.04
     environment: ${{ inputs.environment || null }}
@@ -217,3 +222,52 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  docker-multi:
+    if: inputs.docker-build && inputs.docker-images != ''
+    needs: release
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment || null }}
+    strategy:
+      matrix:
+        image: ${{ fromJSON(inputs.docker-images) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ matrix.image.name }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ inputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version }}
+            ${{ inputs.docker-metadata-tags }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile || 'Dockerfile' }}
+          platforms: ${{ inputs.docker-platforms }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}
