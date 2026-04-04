@@ -1,0 +1,70 @@
+name: Maven Test
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        description: "Java version"
+        required: false
+        type: string
+        default: ""
+      java-version-file:
+        description: "Java version file (e.g. pom.xml)"
+        required: false
+        type: string
+        default: "pom.xml"
+      distribution:
+        description: "Java distribution"
+        required: false
+        type: string
+        default: "temurin"
+      cache:
+        description: "Java cache"
+        required: false
+        type: string
+        default: "maven"
+      test-command:
+        description: "Custom test command"
+        required: false
+        type: string
+        default: "./mvnw clean test"
+      upload-artifact:
+        description: "Upload test results as artifact"
+        required: false
+        type: boolean
+        default: false
+      artifact-name:
+        description: "Artifact name"
+        required: false
+        type: string
+        default: "test-results"
+      artifact-path:
+        description: "Artifact path"
+        required: false
+        type: string
+        default: "**/target/surefire-reports/*.xml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ inputs.java-version }}
+          java-version-file: ${{ inputs.java-version-file }}
+          distribution: ${{ inputs.distribution }}
+          cache: ${{ inputs.cache }}
+
+      - name: Run tests
+        run: ${{ inputs.test-command }}
+
+      - name: Upload test results
+        if: inputs.upload-artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.artifact-path }}

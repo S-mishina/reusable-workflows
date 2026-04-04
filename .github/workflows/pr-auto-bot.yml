@@ -1,0 +1,53 @@
+name: PR Auto Bot
+
+on:
+  workflow_call:
+    inputs:
+      merge-method:
+        description: "Merge method (squash, merge, rebase)"
+        required: false
+        type: string
+        default: "squash"
+      approve-only:
+        description: "Only approve, do not merge"
+        required: false
+        type: boolean
+        default: false
+      actor-allow-list:
+        description: "Allowed actors for auto-approve (JSON array as string)"
+        required: false
+        type: string
+        default: '["dependabot[bot]", "renovate[bot]"]'
+
+jobs:
+  approve:
+    name: Auto Approve Bot PRs
+    if: |
+      github.event_name == 'pull_request' &&
+      contains(fromJSON(inputs.actor-allow-list), github.actor)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Approve PR
+        run: gh pr review --approve "${{ github.event.pull_request.html_url }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  merge:
+    name: Auto Merge Bot PRs
+    needs: [approve]
+    if: |
+      !cancelled() &&
+      needs.approve.result == 'success' &&
+      inputs.approve-only == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Merge PR
+        run: gh pr merge --${{ inputs.merge-method }} "${{ github.event.pull_request.html_url }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
