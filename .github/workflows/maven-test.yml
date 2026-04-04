@@ -51,19 +51,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up JDK (from version)
-        if: inputs.java-version != ''
-        uses: actions/setup-java@v5
-        with:
-          java-version: ${{ inputs.java-version }}
-          distribution: ${{ inputs.distribution }}
-          cache: ${{ inputs.cache }}
+      - name: Resolve Java version
+        id: jv
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.java-version }}" ]; then
+            echo "version=${{ inputs.java-version }}" >> "$GITHUB_OUTPUT"
+          else
+            # pom.xml から java.version を確実に抽出する（正規表現で安全に取得）
+            FILE="${{ inputs.java-version-file }}"
+            V=$(sed -n 's/.*<java.version>\([^<]*\)<\/java.version>.*/\1/p' "$FILE" | head -n 1 | xargs || echo "")
+            if [ -z "$V" ]; then
+              # フォールバックとして maven.compiler.source も確認
+              V=$(sed -n 's/.*<maven.compiler.source>\([^<]*\)<\/maven.compiler.source>.*/\1/p' "$FILE" | head -n 1 | xargs || echo "")
+            fi
+            # それでも取れなければ LTS の 21 をデフォルトにする
+            echo "version=${V:-21}" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Set up JDK (from file)
-        if: inputs.java-version == ''
+      - name: Set up JDK
         uses: actions/setup-java@v5
         with:
-          java-version-file: ${{ inputs.java-version-file }}
+          java-version: ${{ steps.jv.outputs.version }}
           distribution: ${{ inputs.distribution }}
           cache: ${{ inputs.cache }}
 
