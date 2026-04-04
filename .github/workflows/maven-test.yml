@@ -4,12 +4,12 @@ on:
   workflow_call:
     inputs:
       java-version:
-        description: "Java version"
+        description: "Java version (e.g. 21). If provided, java-version-file is ignored."
         required: false
         type: string
         default: ""
       java-version-file:
-        description: "Java version file (e.g. pom.xml)"
+        description: "Java version file (e.g. pom.xml). Used if java-version is empty."
         required: false
         type: string
         default: "pom.xml"
@@ -51,10 +51,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up JDK
+      - name: Set up JDK (from version)
+        if: inputs.java-version != ''
         uses: actions/setup-java@v5
         with:
           java-version: ${{ inputs.java-version }}
+          distribution: ${{ inputs.distribution }}
+          cache: ${{ inputs.cache }}
+
+      - name: Set up JDK (from file)
+        if: inputs.java-version == ''
+        uses: actions/setup-java@v5
+        with:
           java-version-file: ${{ inputs.java-version-file }}
           distribution: ${{ inputs.distribution }}
           cache: ${{ inputs.cache }}
